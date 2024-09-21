@@ -6,4 +6,14 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Remove="StaticData\FilePaths.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="StaticData\FilePaths.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
