@@ -7,13 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="StaticData\SaveFilePaths.json" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="StaticData\SaveFilePaths.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <Compile Remove="StaticData\**" />
+    <EmbeddedResource Remove="StaticData\**" />
+    <None Remove="StaticData\**" />
   </ItemGroup>
 
 </Project>
