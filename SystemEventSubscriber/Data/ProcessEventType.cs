@@ -1,4 +1,4 @@
-﻿namespace SystemEventSubscriber.Data
+namespace SystemEventSubscriber.Data
 {
 	/// <summary>
 	/// Specifies the types of Windows Management Instrumentation (WMI) Event.
