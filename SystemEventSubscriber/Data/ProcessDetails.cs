@@ -2,6 +2,6 @@
 {
 	public readonly struct ProcessDetails
 	{
-        public required string ProcessName { get; init; }
+		public required string ProcessName { get; init; }
 	}
 }

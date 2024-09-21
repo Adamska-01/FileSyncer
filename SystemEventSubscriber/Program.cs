@@ -67,7 +67,7 @@ class Program
 		var stopQuery = GetProcessQuery(savePaths, ProcessEventType.STOP_TRACE);
 		ManagementEventWatcher endWatcher = new ManagementEventWatcher(stopQuery);
 		endWatcher.EventArrived += new EventArrivedEventHandler(GameClosedHandler);
-		
+
 		startWatcher.Start();
 		endWatcher.Start();
 
