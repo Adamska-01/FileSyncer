@@ -5,42 +5,59 @@ namespace SaveDataSync.Providers
 {
 	public class FileSynchronizerService
 	{
-		public IEnumerable<FileSyncLog> SyncFolder(string sourceFolder, string destFolder)
+		public IEnumerable<FileSyncLog> SyncFolder(string cloudFolder, string physicalFolder)
 		{
 			var logs = new List<FileSyncLog>();
-			var sourceDir = new DirectoryInfo(sourceFolder);
-			var destDir = new DirectoryInfo(destFolder);
+			var cloudDir = new DirectoryInfo(cloudFolder);
+			var physicalDir = new DirectoryInfo(physicalFolder);
 
 			try
 			{
-				if (!destDir.Exists)
+				if (!physicalDir.Exists)
 				{
-					Directory.CreateDirectory(destDir.FullName);
+					Directory.CreateDirectory(physicalDir.FullName);
 				}
 
-				// Process files
-				foreach (FileInfo file in sourceDir.GetFiles())
+				// Sync files from cloud folder to physical folder
+				foreach (var cloudFile in cloudDir.GetFiles())
 				{
-					var tempPath = Path.Combine(destDir.FullName, file.Name);
-					var status = string.Empty;
+					var physicalFilePath = Path.Combine(physicalDir.FullName, cloudFile.Name);
+					var physicalFile = new FileInfo(physicalFilePath);
 
-					if (File.Exists(tempPath) && File.GetLastWriteTime(tempPath) >= file.LastWriteTime)
+					var status = string.Empty;
+					var destinationPath = string.Empty;
+
+					if (physicalFile.Exists)
 					{
-						status = "Skipped (Up-to-date)";
+						// Check if physical file is newer than the cloud file
+						if (physicalFile.LastWriteTime > cloudFile.LastWriteTime)
+						{
+							var cloudFilePath = Path.Combine(cloudDir.FullName, cloudFile.Name);
+							physicalFile.CopyTo(cloudFilePath, overwrite: true);
+							status = "Copied to Cloud";
+							destinationPath = cloudFilePath;
+						}
+						else
+						{
+							status = "Already up to date";
+							destinationPath = "N/A";
+						}
 					}
 					else
 					{
-						file.CopyTo(tempPath, true);
-						status = "Copied";
+						// If physical file does not exist, copy cloud file to physical folder
+						cloudFile.CopyTo(physicalFilePath, overwrite: true);
+						status = "Copied to Physical";
+						destinationPath = physicalFilePath;
 					}
 
-					logs.Add(new FileSyncLog(file.Name, file.LastWriteTime, status, tempPath));
+					logs.Add(new FileSyncLog(cloudFile.Name, cloudFile.LastWriteTime, status, destinationPath));
 				}
 
-				// Recursively process subdirectories
-				foreach (DirectoryInfo subdir in sourceDir.GetDirectories())
+				// Recursively sync subdirectories
+				foreach (var subdir in cloudDir.GetDirectories())
 				{
-					logs.AddRange(SyncFolder(subdir.FullName, Path.Combine(destDir.FullName, subdir.Name)));
+					logs.AddRange(SyncFolder(subdir.FullName, Path.Combine(physicalDir.FullName, subdir.Name)));
 				}
 			}
 			catch (UnauthorizedAccessException ex)
