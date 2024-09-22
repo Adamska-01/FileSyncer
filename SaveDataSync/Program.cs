@@ -37,7 +37,7 @@ class Program
 				var sourcePath = Path.Combine(oneDrivePath, path.CloudPath);
 				var destinationPath = Path.Combine(appDataPath, path.PhysicalPath);
 
-				logs.AddRange(fileSynchronizer.SyncFolder(sourcePath, destinationPath));
+				logs.AddRange(fileSynchronizer.SyncFolders(sourcePath, destinationPath));
 			}
 			catch (Exception ex)
 			{

@@ -1,79 +1,97 @@
-﻿using SaveDataSync.Data;
-
-
-namespace SaveDataSync.Providers
+﻿namespace SaveDataSync.Providers
 {
+	using Data;
+	
+	
 	public class FileSynchronizerService
 	{
-		public IEnumerable<FileSyncLog> SyncFolder(string cloudFolder, string physicalFolder)
+		public IEnumerable<FileSyncLog> SyncFolders(string path1, string path2)
 		{
-			var logs = new List<FileSyncLog>();
-			var cloudDir = new DirectoryInfo(cloudFolder);
-			var physicalDir = new DirectoryInfo(physicalFolder);
-
-			try
+			// Check if at least one path exists
+			if (!Directory.Exists(path1) && !Directory.Exists(path2))
 			{
-				if (!physicalDir.Exists)
+				yield break;
+			}
+
+			// Ensure both paths exist by creating them if needed
+			if (!Directory.Exists(path1))
+			{
+				Directory.CreateDirectory(path1);
+			}
+
+			if (!Directory.Exists(path2))
+			{
+				Directory.CreateDirectory(path2);
+			}
+
+			// Sync files in the current directories and their subdirectories
+			foreach (var log in SyncDirectory(path1, path2))
+			{
+				yield return log;
+			}
+
+			foreach (var log in SyncDirectory(path2, path1))
+			{
+				yield return log;
+			}
+
+			Console.WriteLine("Sync complete.");
+		}
+
+
+		private IEnumerable<FileSyncLog> SyncDirectory(string sourceDir, string targetDir)
+		{
+			// Get all files from the source directory
+			foreach (var sourceFilePath in Directory.GetFiles(sourceDir))
+			{
+				var fileName = Path.GetFileName(sourceFilePath);
+				var targetFilePath = Path.Combine(targetDir, fileName);
+				var lastModified = File.GetLastWriteTime(sourceFilePath);
+
+				// If the file exists in both directories, compare the last write time
+				if (File.Exists(targetFilePath))
 				{
-					Directory.CreateDirectory(physicalDir.FullName);
-				}
+					var targetLastModified = File.GetLastWriteTime(targetFilePath);
 
-				// Sync files from cloud folder to physical folder
-				foreach (var cloudFile in cloudDir.GetFiles())
-				{
-					var physicalFilePath = Path.Combine(physicalDir.FullName, cloudFile.Name);
-					var physicalFile = new FileInfo(physicalFilePath);
-
-					var status = string.Empty;
-					var destinationPath = string.Empty;
-
-					if (physicalFile.Exists)
+					// Copy the more recent file to the other folder
+					if (lastModified > targetLastModified)
 					{
-						// Check if physical file is newer than the cloud file
-						if (physicalFile.LastWriteTime > cloudFile.LastWriteTime)
-						{
-							var cloudFilePath = Path.Combine(cloudDir.FullName, cloudFile.Name);
-							physicalFile.CopyTo(cloudFilePath, overwrite: true);
-							status = "Copied to Cloud";
-							destinationPath = cloudFilePath;
-						}
-						else
-						{
-							status = "Already up to date";
-							destinationPath = "N/A";
-						}
+						File.Copy(sourceFilePath, targetFilePath, true);
+						yield return new FileSyncLog(fileName, lastModified, "Updated", targetFilePath);
 					}
-					else
+					else if (targetLastModified > lastModified)
 					{
-						// If physical file does not exist, copy cloud file to physical folder
-						cloudFile.CopyTo(physicalFilePath, overwrite: true);
-						status = "Copied to Physical";
-						destinationPath = physicalFilePath;
+						File.Copy(targetFilePath, sourceFilePath, true);
+						yield return new FileSyncLog(Path.GetFileName(targetFilePath), targetLastModified, "Updated", sourceDir);
 					}
-
-					logs.Add(new FileSyncLog(cloudFile.Name, cloudFile.LastWriteTime, status, destinationPath));
 				}
-
-				// Recursively sync subdirectories
-				foreach (var subdir in cloudDir.GetDirectories())
+				else
 				{
-					logs.AddRange(SyncFolder(subdir.FullName, Path.Combine(physicalDir.FullName, subdir.Name)));
+					// File only exists in the source directory, copy it to the target directory
+					File.Copy(sourceFilePath, targetFilePath, true);
+					yield return new FileSyncLog(fileName, lastModified, "Copied", targetFilePath);
 				}
 			}
-			catch (UnauthorizedAccessException ex)
-			{
-				Console.WriteLine($"Access denied: {ex.Message}");
-			}
-			catch (IOException ex)
-			{
-				Console.WriteLine($"I/O error: {ex.Message}");
-			}
-			catch (Exception ex)
-			{
-				Console.WriteLine($"Unexpected error: {ex.Message}");
-			}
 
-			return logs;
+			// Get all subdirectories in the source directory
+			var sourceSubDirs = Directory.GetDirectories(sourceDir);
+			foreach (var sourceSubDir in sourceSubDirs)
+			{
+				var subDirName = Path.GetFileName(sourceSubDir);
+				var targetSubDir = Path.Combine(targetDir, subDirName);
+
+				// Ensure the target subdirectory exists
+				if (!Directory.Exists(targetSubDir))
+				{
+					Directory.CreateDirectory(targetSubDir);
+				}
+
+				// Recursively sync the subdirectories
+				foreach (var log in SyncDirectory(sourceSubDir, targetSubDir))
+				{
+					yield return log;
+				}
+			}
 		}
 	}
 }
