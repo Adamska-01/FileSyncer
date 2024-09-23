@@ -7,19 +7,20 @@
 	{
 		public IEnumerable<FileSyncLog> SyncFolders(string path1, string path2)
 		{
+			var path1Exists = Directory.Exists(path1);
+			var path2Exists = Directory.Exists(path2);
+
 			// Check if at least one path exists
-			if (!Directory.Exists(path1) && !Directory.Exists(path2))
-			{
+			if (!path1Exists && !path2Exists)
 				yield break;
-			}
 
 			// Ensure both paths exist by creating them if needed
-			if (!Directory.Exists(path1))
+			if (!path1Exists)
 			{
 				Directory.CreateDirectory(path1);
 			}
 
-			if (!Directory.Exists(path2))
+			if (!path2Exists)
 			{
 				Directory.CreateDirectory(path2);
 			}
