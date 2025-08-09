@@ -1,12 +1,15 @@
 ﻿namespace SaveDataSync.Providers
 {
 	using Data;
-	
-	
+
+
 	public class FileSynchronizerService
 	{
 		public IEnumerable<FileSyncLog> SyncFolders(string path1, string path2)
 		{
+			if (string.IsNullOrWhiteSpace(path1) || string.IsNullOrWhiteSpace(path2))
+				throw new ArgumentException("Both path1 and path2 must be non-empty valid directory paths.");
+
 			var path1Exists = Directory.Exists(path1);
 			var path2Exists = Directory.Exists(path2);
 
@@ -25,7 +28,7 @@
 				Directory.CreateDirectory(path2);
 			}
 
-			// Sync files in the current directories and their subdirectories
+			// Bidirectional Sync
 			foreach (var log in SyncDirectory(path1, path2))
 			{
 				yield return log;
@@ -42,36 +45,47 @@
 
 		private IEnumerable<FileSyncLog> SyncDirectory(string sourceDir, string targetDir)
 		{
-			// Get all files from the source directory
 			foreach (var sourceFilePath in Directory.GetFiles(sourceDir))
 			{
 				var fileName = Path.GetFileName(sourceFilePath);
 				var targetFilePath = Path.Combine(targetDir, fileName);
 				var lastModified = File.GetLastWriteTime(sourceFilePath);
 
-				// If the file exists in both directories, compare the last write time
-				if (File.Exists(targetFilePath))
-				{
-					var targetLastModified = File.GetLastWriteTime(targetFilePath);
+				FileSyncLog? log = null;
 
-					// Copy the more recent file to the other folder
-					if (lastModified > targetLastModified)
-					{
-						File.Copy(sourceFilePath, targetFilePath, true);
-						yield return new FileSyncLog(fileName, lastModified, "Updated", targetFilePath);
-					}
-					else if (targetLastModified > lastModified)
-					{
-						File.Copy(targetFilePath, sourceFilePath, true);
-						yield return new FileSyncLog(Path.GetFileName(targetFilePath), targetLastModified, "Updated", sourceDir);
-					}
-				}
-				else
+				try
 				{
-					// File only exists in the source directory, copy it to the target directory
-					File.Copy(sourceFilePath, targetFilePath, true);
-					yield return new FileSyncLog(fileName, lastModified, "Copied", targetFilePath);
+					// If the file exists in both directories, compare the last write time
+					if (File.Exists(targetFilePath))
+					{
+						var targetLastModified = File.GetLastWriteTime(targetFilePath);
+
+						// Copy the more recent file to the other folder
+						if (lastModified > targetLastModified)
+						{
+							File.Copy(sourceFilePath, targetFilePath, true);
+							log = new FileSyncLog(fileName, lastModified, "Updated", targetFilePath);
+						}
+						else if (targetLastModified > lastModified)
+						{
+							File.Copy(targetFilePath, sourceFilePath, true);
+							log = new FileSyncLog(fileName, targetLastModified, "Updated", sourceDir);
+						}
+					}
+					else
+					{
+						// File only exists in the source directory, copy it to the target directory
+						File.Copy(sourceFilePath, targetFilePath, true);
+						log = new FileSyncLog(fileName, lastModified, "Copied", targetFilePath);
+					}
 				}
+				catch (Exception ex)
+				{
+					log = new FileSyncLog(fileName, lastModified, $"Error: {ex.Message}", sourceDir);
+				}
+
+				if (log != null)
+					yield return log;
 			}
 
 			// Get all subdirectories in the source directory
