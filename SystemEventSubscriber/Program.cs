@@ -8,74 +8,160 @@ using SystemEventSubscriber.Provider.Extensions;
 
 class Program
 {
-	// Event to block the program from exiting
-	private static ManualResetEvent quitEvent = new ManualResetEvent(false);
+	private const string TASK_NAME = "SystemEventSubscriber";
+
+	private const string TASK_FOLDER_PATH = @"\SaveDataSync";
+
+
+	private static ProcessDetails[] monitoredPaths = Array.Empty<ProcessDetails>();
+
+	private static ManagementEventWatcher? startWatcher;
+
+	private static ManagementEventWatcher? endWatcher;
+
+	private static FileSystemWatcher? configWatcher;
+
 
 	static void Main(string[] args)
 	{
-		string taskName = "SystemEventSubscriber";
-		var taskFolderPath = @"\SaveDataSync";
+		CreateScheduledTask();
 
-		// Get the current program's executable path
+		LoadMonitoredPaths();
+
+		SetupEventWatchers(monitoredPaths);
+
+		SetupConfigFileWatcher();
+
+		var quitEvent = new ManualResetEvent(false);
+		quitEvent.WaitOne();
+
+		CleanupWatchers();
+	}
+
+
+	static void CreateScheduledTask()
+	{
 		var exePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-		// Create a new task service instance
-		using (var taskService = new TaskService())
+
+		using var taskService = new TaskService();
+
+		TaskFolder folder;
+		try
 		{
-			// Check if the task with the same name already exists
-			var existingTask = taskService.FindTask(taskName);
-
-			if (existingTask == null)
-			{
-				// If task doesn't exist, create a new task definition
-				var taskDef = taskService.NewTask();
-				taskDef.RegistrationInfo.Description = "SystemEventSubscriber to sync save data for games that don't support steam cloud";
-
-				// Set the trigger (to run at system startup)
-				taskDef.Triggers.Add(new BootTrigger());
-
-				// Define the action (run the current executable)
-				taskDef.Actions.Add(new ExecAction(exePath, null, null));
-
-				// Set the task to run with highest privileges (administrator rights)
-				taskDef.Principal.UserId = "SYSTEM"; // Run as SYSTEM user
-				taskDef.Principal.LogonType = TaskLogonType.ServiceAccount;
-				taskDef.Principal.RunLevel = TaskRunLevel.Highest;
-				// Register the task in the Task Scheduler root folder
-				// Check if the folder exists
-				TaskFolder folder;
-				try
-				{
-					folder = taskService.GetFolder(taskFolderPath);
-				}
-				catch (FileNotFoundException)
-				{
-					// Folder doesn't exist, create it
-					folder = taskService.RootFolder.CreateFolder(taskFolderPath, new TaskSecurity());
-				}
-
-				folder.RegisterTaskDefinition(taskName, taskDef);
-			}
+			folder = taskService.GetFolder(TASK_FOLDER_PATH);
+		}
+		catch (FileNotFoundException)
+		{
+			folder = taskService.RootFolder.CreateFolder(TASK_FOLDER_PATH, new TaskSecurity());
 		}
 
+		var existingTask = folder.Tasks.FirstOrDefault(t => t.Name == TASK_NAME);
 
-		var savePaths = FilePathsLoader.LoadFilePaths<ProcessDetails[]>();
+		if (existingTask == null)
+		{
+			var taskDef = taskService.NewTask();
+			taskDef.RegistrationInfo.Description = "SystemEventSubscriber to sync save data for games that don't support steam cloud";
 
-		var startQuery = GetProcessQuery(savePaths, ProcessEventType.START_TRACE);
-		var startWatcher = new ManagementEventWatcher(startQuery);
-		startWatcher.EventArrived += new EventArrivedEventHandler(GameClosedHandler);
+			taskDef.Triggers.Add(new BootTrigger());
+			taskDef.Actions.Add(new ExecAction(exePath, null, null));
 
-		var stopQuery = GetProcessQuery(savePaths, ProcessEventType.STOP_TRACE);
-		ManagementEventWatcher endWatcher = new ManagementEventWatcher(stopQuery);
-		endWatcher.EventArrived += new EventArrivedEventHandler(GameClosedHandler);
+			taskDef.Principal.UserId = "SYSTEM";
+			taskDef.Principal.LogonType = TaskLogonType.ServiceAccount;
+			taskDef.Principal.RunLevel = TaskRunLevel.Highest;
 
+			folder.RegisterTaskDefinition(TASK_NAME, taskDef);
+
+			Console.WriteLine($"Task '{TASK_NAME}' created.");
+		}
+		else
+		{
+			Console.WriteLine($"Task '{TASK_NAME}' already exists.");
+		}
+	}
+
+	static void LoadMonitoredPaths()
+	{
+		// Example: Load from JSON or other source
+		monitoredPaths = FilePathsLoader.LoadFilePaths<ProcessDetails[]>();
+
+		Console.WriteLine("Loaded monitored paths.");
+	}
+
+	static void SetupEventWatchers(ProcessDetails[] paths)
+	{
+		// Clean up existing watchers if any
+		CleanupWatchers();
+
+		var startQuery = GetProcessQuery(paths, ProcessEventType.START_TRACE);
+		startWatcher = new ManagementEventWatcher(startQuery);
+		startWatcher.EventArrived += GameClosedHandler;
+
+		var stopQuery = GetProcessQuery(paths, ProcessEventType.STOP_TRACE);
+		endWatcher = new ManagementEventWatcher(stopQuery);
+		endWatcher.EventArrived += GameClosedHandler;
+		
 		startWatcher.Start();
 		endWatcher.Start();
 
-		quitEvent.WaitOne();
-
-		startWatcher.Stop();
-		endWatcher.Stop();
+		Console.WriteLine("Event watchers started.");
 	}
+
+	static void CleanupWatchers()
+	{
+		if (startWatcher != null)
+		{
+			startWatcher.Stop();
+			startWatcher.EventArrived -= GameClosedHandler;
+			startWatcher.Dispose();
+			startWatcher = null;
+		}
+		if (endWatcher != null)
+		{
+			endWatcher.Stop();
+			endWatcher.EventArrived -= GameClosedHandler;
+			endWatcher.Dispose();
+			endWatcher = null;
+		}
+	}
+
+	static void SetupConfigFileWatcher()
+	{
+		string configFile = "monitoredPaths.json";  // Adjust to your config file path
+
+		configWatcher = new FileSystemWatcher(Path.GetDirectoryName(configFile))
+		{
+			Filter = Path.GetFileName(configFile),
+			NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName
+		};
+
+		configWatcher.Changed += OnConfigFileChanged;
+		configWatcher.Created += OnConfigFileChanged;
+		configWatcher.Renamed += OnConfigFileChanged;
+		configWatcher.EnableRaisingEvents = true;
+
+		Console.WriteLine("Config file watcher enabled.");
+	}
+
+	private static void OnConfigFileChanged(object sender, FileSystemEventArgs e)
+	{
+		// Small delay to allow file write to finish
+		Thread.Sleep(100);
+
+		try
+		{
+			Console.WriteLine("Config file changed. Reloading monitored paths...");
+			LoadMonitoredPaths();
+
+			SetupEventWatchers(monitoredPaths);
+
+			Console.WriteLine("Reload complete.");
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"Error reloading config: {ex.Message}");
+		}
+	}
+
 
 	static string GetProcessQuery(ProcessDetails[] processDetails, ProcessEventType eventType)
 	{
