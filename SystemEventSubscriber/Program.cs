@@ -45,15 +45,7 @@ class Program
 
 		using var taskService = new TaskService();
 
-		TaskFolder folder;
-		try
-		{
-			folder = taskService.GetFolder(TASK_FOLDER_PATH);
-		}
-		catch (FileNotFoundException)
-		{
-			folder = taskService.RootFolder.CreateFolder(TASK_FOLDER_PATH, new TaskSecurity());
-		}
+		var folder = taskService.GetFolder(TASK_FOLDER_PATH) ?? taskService.RootFolder.CreateFolder(TASK_FOLDER_PATH, new TaskSecurity());
 
 		var existingTask = folder.Tasks.FirstOrDefault(t => t.Name == TASK_NAME);
 
